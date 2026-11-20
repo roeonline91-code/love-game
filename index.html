@@ -1,0 +1,376 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emirhan ❤️ Zeynep | Love Games</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:linear-gradient(135deg,#ffe1ec,#f8dafa,#e9dcff);
+ color:#632d50;font-family:Arial,sans-serif;min-height:100vh;
+}
+header{text-align:center;padding:28px 12px 12px}
+h1{font-size:30px;margin:5px}
+header p{color:#965477}
+.container{max-width:850px;margin:auto;padding:15px}
+.panel,.game{
+ background:#ffffffd9;border:1px solid #fff;
+ border-radius:22px;padding:20px;margin-bottom:16px;
+ box-shadow:0 8px 25px #b96a9230;
+}
+input{
+ width:100%;padding:14px;border:1px solid #edb8d0;
+ border-radius:12px;margin:7px 0;font-size:16px;
+}
+button{
+ border:0;background:#e85b98;color:white;
+ border-radius:13px;padding:13px 17px;
+ font-size:15px;font-weight:bold;cursor:pointer;margin:4px;
+}
+button:hover{filter:brightness(.95)}
+button.secondary{background:#a76bba}
+button:disabled{opacity:.5}
+.hidden{display:none!important}
+.games{
+ display:grid;grid-template-columns:repeat(2,1fr);gap:12px
+}
+.game-card{
+ background:#fff0f6;border:1px solid #f5c6db;
+ border-radius:18px;padding:20px 10px;text-align:center;
+ cursor:pointer;min-height:120px;
+}
+.game-card strong{display:block;margin-top:10px}
+.game-card span{font-size:32px}
+.score{
+ display:flex;justify-content:space-around;gap:10px;
+ text-align:center;font-weight:bold
+}
+.score div{background:#fff0f6;border-radius:15px;padding:12px;flex:1}
+.small{font-size:13px;color:#9b6c85}
+.question{font-size:20px;font-weight:bold;text-align:center;margin:20px 0}
+.answers{display:grid;gap:8px}
+.answers button{width:100%;margin:0}
+.cards{
+ display:grid;grid-template-columns:repeat(4,1fr);gap:9px
+}
+.memory{
+ aspect-ratio:1;background:#f9c7df;border-radius:13px;
+ font-size:28px;color:#9a3e70;
+}
+.memory.open{background:white}
+.heart{
+ font-size:48px;cursor:pointer;display:inline-block;
+ padding:12px;user-select:none
+}
+.heart:active{transform:scale(.8)}
+footer{text-align:center;padding:25px;color:#a66b88}
+</style>
+</head>
+<body>
+<header>
+ <div style="font-size:38px">💕</div>
+ <h1>Emirhan ❤️ Zeynep</h1>
+ <p>Love Games · Birlikte daha güzel</p>
+</header>
+
+<div class="container">
+ <section class="panel" id="login">
+  <h2>💌 Oyun odamıza hoş geldin</h2>
+  <input id="playerName" placeholder="İsmin" maxlength="20">
+  <input id="roomCode" placeholder="Oda kodu (ör. ASK2026)" maxlength="15">
+  <button onclick="joinRoom()">Odaya Katıl ❤️</button>
+  <button class="secondary" onclick="createRoom()">Yeni Oda Oluştur</button>
+  <p class="small" id="status">Önce Firebase bağlantısını kurmalısın.</p>
+ </section>
+
+ <section class="panel hidden" id="lobby">
+  <h2>💗 Aşk odamız</h2>
+  <p>Oda kodu: <strong id="roomLabel"></strong></p>
+  <button class="secondary" onclick="copyRoom()">Oda Kodunu Kopyala</button>
+  <div id="players" class="score"></div>
+  <h3>Oyununu seç ❤️</h3>
+  <div class="games">
+   <div class="game-card" onclick="openGame('love')">
+    <span>💘</span><strong>Aşk Testi</strong>
+   </div>
+   <div class="game-card" onclick="openGame('memory')">
+    <span>🧠</span><strong>Hafıza Oyunu</strong>
+   </div>
+   <div class="game-card" onclick="openGame('catch')">
+    <span>💗</span><strong>Kalp Yakalama</strong>
+   </div>
+   <div class="game-card" onclick="openGame('know')">
+    <span>💌</span><strong>Birbirimizi Tanıyalım</strong>
+   </div>
+  </div>
+ </section>
+
+ <section class="game hidden" id="game">
+  <button class="secondary" onclick="backHome()">← Ana sayfa</button>
+  <div id="gameContent"></div>
+ </section>
+</div>
+<footer>Emirhan ❤️ Zeynep · Sonsuza kadar birlikte 💕</footer>
+
+<script>
+// FIREBASE BİLGİLERİNİ BURAYA EKLE
+const firebaseConfig = {
+ apiKey: "BURAYA_API_KEY",
+ authDomain: "BURAYA_PROJECT.firebaseapp.com",
+ databaseURL: "BURAYA_DATABASE_URL",
+ projectId: "BURAYA_PROJECT_ID",
+ storageBucket: "BURAYA_PROJECT.appspot.com",
+ messagingSenderId: "BURAYA_SENDER_ID",
+ appId: "BURAYA_APP_ID"
+};
+
+let db,uid,room,myName,myScore=0,roomData={};
+let currentGame="",gameListener=null;
+let catchTimer=null,catchActive=false;
+let flipped=[],matched=[],memoryDeck=[];
+
+const $=id=>document.getElementById(id);
+const questions=[
+ ["İlk kim mesaj attı?","Emirhan","Zeynep"],
+ ["Kim daha romantik?","Emirhan","Zeynep"],
+ ["Kim daha çok özler?","İkimiz de","İkimiz de"],
+ ["Birlikte en çok ne yapmayı severiz?","Gezmeyi","Birlikte vakit geçirmeyi"],
+ ["Kim daha çok naz yapar?","Emirhan","Zeynep"],
+ ["Kim daha çok güler?","Emirhan","Zeynep"]
+];
+const knowQuestions=[
+ "Birlikte gitmek istediğimiz şehir neresi?",
+ "En sevdiğimiz ortak anımız hangisi?",
+ "Birbirimizde en sevdiğimiz özellik ne?",
+ "Birlikte yapmak istediğimiz en güzel şey ne?",
+ "İlk buluşmamızda ne hissetmiştik?",
+ "Birbirimize taktığımız en tatlı hitap ne?"
+];
+
+function init(){
+ try{
+  if(firebaseConfig.apiKey==="BURAYA_API_KEY") {
+   $("status").textContent="Firebase ayarlarını henüz eklemedin.";
+   return;
+  }
+  firebase.initializeApp(firebaseConfig);
+  db=firebase.database();
+  firebase.auth().signInAnonymously().then(u=>{
+   uid=u.user.uid;
+   $("status").textContent="Bağlantı hazır ❤️";
+  }).catch(e=>$("status").textContent=e.message);
+ }catch(e){$("status").textContent="Firebase bağlantı hatası: "+e.message}
+}
+init();
+
+function roomRef(){return db.ref("rooms/"+room)}
+
+async function createRoom(){
+ if(!uid)return alert("Firebase bağlantısını kontrol et.");
+ room=Math.random().toString(36).slice(2,8).toUpperCase();
+ await roomRef().set({
+  players:{},scores:{},createdAt:Date.now()
+ });
+ await enterRoom();
+}
+
+async function joinRoom(){
+ if(!uid)return alert("Firebase bağlantısını kontrol et.");
+ room=$("roomCode").value.trim().toUpperCase();
+ if(!room)return alert("Oda kodunu yaz.");
+ const snap=await roomRef().once("value");
+ if(!snap.exists())return alert("Bu oda bulunamadı.");
+ await enterRoom();
+}
+
+async function enterRoom(){
+ myName=$("playerName").value.trim()||"Oyuncu";
+ await roomRef().child("players/"+uid).set({
+  name:myName,joinedAt:Date.now()
+ });
+ await roomRef().child("scores/"+uid).set(0);
+ $("login").classList.add("hidden");
+ $("lobby").classList.remove("hidden");
+ $("roomLabel").textContent=room;
+ roomRef().on("value",snap=>{
+  roomData=snap.val()||{};
+  renderPlayers();
+ });
+ window.onbeforeunload=()=>{
+  if(room&&uid)roomRef().child("players/"+uid).remove();
+ };
+}
+
+function renderPlayers(){
+ let players=Object.entries(roomData.players||{});
+ let scores=roomData.scores||{};
+ $("players").innerHTML=players.map(([id,p])=>
+ `<div>${escapeHTML(p.name)}<br><span class="small">${scores[id]||0} puan</span></div>`
+ ).join("");
+}
+function escapeHTML(s){
+ return String(s).replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ }[c]));
+}
+function copyRoom(){
+ navigator.clipboard?.writeText(room)
+ .then(()=>alert("Oda kodu kopyalandı: "+room))
+ .catch(()=>alert("Oda kodun: "+room));
+}
+function backHome(){
+ clearInterval(catchTimer);
+ if(gameListener){roomRef().child("game").off("value",gameListener);gameListener=null;}
+ $("game").classList.add("hidden");
+ $("lobby").classList.remove("hidden");
+}
+function openGame(type){
+ currentGame=type;
+ $("lobby").classList.add("hidden");
+ $("game").classList.remove("hidden");
+ if(gameListener){roomRef().child("game").off("value",gameListener);gameListener=null;}
+ if(type==="love")loveGame();
+ if(type==="memory")memoryGame();
+ if(type==="catch")catchGame();
+ if(type==="know")knowGame();
+}
+async function addScore(n=1){
+ const ref=roomRef().child("scores/"+uid);
+ await ref.transaction(v=>(v||0)+n);
+}
+
+// AŞK TESTİ
+function loveGame(){
+ $("gameContent").innerHTML=`
+ <h2>💘 Aşk Testi</h2>
+ <p class="small">Soruları cevaplayın ve birbirinizi ne kadar tanıdığınızı görün.</p>
+ <div class="question" id="loveQ"></div>
+ <div class="answers" id="loveA"></div>
+ <p id="loveResult" class="question"></p>
+ <button onclick="nextLove()">Sonraki soru ❤️</button>`;
+ window.loveIndex=0;
+ nextLove();
+}
+function nextLove(){
+ if(window.loveIndex>=questions.length)window.loveIndex=0;
+ let q=questions[window.loveIndex];
+ $("loveQ").textContent=q[0];
+ $("loveA").innerHTML=q.slice(1).map(a=>
+ `<button onclick="answerLove('${a}')">${a}</button>`
+ ).join("");
+ $("loveResult").textContent="";
+}
+async function answerLove(a){
+ $("loveResult").textContent="Cevabın: "+a+" ❤️";
+ await addScore(2);
+ window.loveIndex++;
+ $("loveA").innerHTML="";
+}
+
+// HAFIZA OYUNU
+function memoryGame(){
+ memoryDeck=["❤️","🌹","💗","🧸","💌","💕","🌸","💍",
+ "❤️","🌹","💗","🧸","💌","💕","🌸","💍"]
+ .sort(()=>Math.random()-.5);
+ flipped=[];matched=[];
+ $("gameContent").innerHTML=`
+ <h2>🧠 Hafıza Oyunu</h2>
+ <p>İki aynı kartı bul. Her eşleşme 2 puan!</p>
+ <div class="cards" id="memoryCards"></div>
+ <p id="memoryInfo"></p>
+ <button onclick="memoryGame()">Yeniden karıştır</button>`;
+ drawMemory();
+}
+function drawMemory(){
+ $("memoryCards").innerHTML=memoryDeck.map((v,i)=>
+ `<button class="memory ${matched.includes(i)||flipped.includes(i)?"open":""}"
+ onclick="flipCard(${i})">${matched.includes(i)||flipped.includes(i)?v:"?"}</button>`
+ ).join("");
+ $("memoryInfo").textContent="Bulunan çift: "+matched.length/2+" / 8";
+}
+async function flipCard(i){
+ if(flipped.length>=2||flipped.includes(i)||matched.includes(i))return;
+ flipped.push(i);drawMemory();
+ if(flipped.length===2){
+  if(memoryDeck[flipped[0]]===memoryDeck[flipped[1]]){
+   matched.push(...flipped);flipped=[];await addScore(2);drawMemory();
+   if(matched.length===16)$("memoryInfo").textContent="Harikasınız! Bütün kartlar bulundu ❤️";
+  }else{
+   setTimeout(()=>{flipped=[];drawMemory()},850);
+  }
+ }
+}
+
+// KALP YAKALAMA
+function catchGame(){
+ $("gameContent").innerHTML=`
+ <h2>💗 Kalp Yakalama</h2>
+ <p>30 saniyede olabildiğince çok kalbe dokun!</p>
+ <h2 id="catchTime">30 saniye</h2>
+ <h1 id="catchCount">0 ❤️</h1>
+ <div style="text-align:center;padding:20px" id="heartArea">
+  <button class="heart" onclick="catchHeart()">❤️</button>
+ </div>
+ <button onclick="startCatch()">Oyunu başlat</button>
+ <p id="catchResult"></p>`;
+ window.catchCount=0;
+ catchActive=false;
+}
+function startCatch(){
+ clearInterval(catchTimer);
+ window.catchCount=0;catchActive=true;
+ $("catchCount").textContent="0 ❤️";
+ let t=30;$("catchTime").textContent=t+" saniye";
+ $("catchResult").textContent="";
+ catchTimer=setInterval(()=>{
+  t--;$("catchTime").textContent=t+" saniye";
+  if(t<=0){
+   clearInterval(catchTimer);catchActive=false;
+   $("catchResult").textContent="Oyun bitti! "+window.catchCount+" kalp topladın ❤️";
+   addScore(window.catchCount);
+  }
+ },1000);
+}
+function catchHeart(){
+ if(!catchActive)return;
+ window.catchCount++;
+ $("catchCount").textContent=window.catchCount+" ❤️";
+}
+
+// BİRBİRİMİZİ TANIYALIM
+function knowGame(){
+ window.knowIndex=0;
+ $("gameContent").innerHTML=`
+ <h2>💌 Birbirimizi Tanıyalım</h2>
+ <div class="question" id="knowQ"></div>
+ <textarea id="knowAnswer" placeholder="Cevabını yaz..." style="width:100%;height:90px;border:1px solid #edb8d0;border-radius:12px;padding:12px;font-size:16px"></textarea>
+ <button onclick="submitKnow()">Cevabı paylaş ❤️</button>
+ <p id="knowResult"></p>
+ <button class="secondary" onclick="nextKnow()">Yeni soru</button>
+ <div id="sharedAnswers"></div>`;
+ nextKnow();
+}
+function nextKnow(){
+ $("knowQ").textContent=knowQuestions[window.knowIndex%knowQuestions.length];
+ $("knowAnswer").value="";
+ $("knowResult").textContent="";
+}
+async function submitKnow(){
+ let answer=$("knowAnswer").value.trim();
+ if(!answer)return alert("Bir cevap yaz ❤️");
+ await roomRef().child("answers").push({
+  uid,name:myName,question:knowQuestions[window.knowIndex%knowQuestions.length],
+  answer,time:Date.now()
+ });
+ await addScore(2);
+ $("knowResult").textContent="Cevabın paylaşıldı ❤️";
+ $("knowAnswer").value="";
+}
+</script>
+</body>
+</html>
